@@ -1,0 +1,19 @@
+name: Attest to Vega staging
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        attr: [probe, flaky]
+    steps:
+      - uses: Ad-Astra-Computing/vega-agent/agent@v0.4.3
+        with:
+          installable: "github:Ad-Astra-Computing/vega-cache-example#${{ matrix.attr }}"
+          control-plane: https://vega-cache-staging.ad-astra-computing-inc.workers.dev
