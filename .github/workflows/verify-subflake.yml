@@ -1,0 +1,18 @@
+name: Verify subflake (?dir=) provenance
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Build the subdirectory flake and attest to staging
+        uses: Ad-Astra-Computing/vega-agent/agent@8936bf25520408c8378b6e8507cf30b219f92e82
+        with:
+          installable: "${{ github.workspace }}/sub#subprobe"
+          control-plane: https://vega-cache-staging.ad-astra-computing-inc.workers.dev
