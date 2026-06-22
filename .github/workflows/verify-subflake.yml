@@ -1,5 +1,7 @@
 name: Verify subflake (?dir=) provenance
 on:
+  push:
+    branches: [verify-subflake]
   workflow_dispatch:
 permissions:
   id-token: write
