@@ -1,19 +1,93 @@
+# Publishes this repository's probe builds to the Vega staging control plane.
+#
+# There is no credential here and none to rotate. `id-token: write` lets the run
+# ask GitHub for a short-lived token that names this workflow, and Vega accepts
+# that identity instead of a stored secret. The token expires with the job.
+#
+# It doubles as the end-to-end check for a staging deploy: this is the only path
+# that exercises the OIDC identity, the presigned upload and the attestation
+# stores together.
 name: Attest to Vega staging
 on:
   push:
     branches: [main]
   workflow_dispatch:
-permissions:
-  id-token: write
-  contents: read
+  schedule:
+    # Daily and off-peak, so a staging deploy that broke the write path shows up
+    # within a day rather than the next time someone pushes here.
+    - cron: "17 6 * * *"
+
+permissions: {}
+
+# One run per ref: two pushes in quick succession would otherwise have the check
+# reading a different commit than the one that was attested.
+concurrency:
+  group: attest-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CONTROL_PLANE: https://vega-cache-staging.ad-astra-computing-inc.workers.dev
+
 jobs:
   attest:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         attr: [probe, flaky, bignar]
     steps:
-      - uses: Ad-Astra-Computing/vega-agent/agent@v0.4.3
+      - uses: Ad-Astra-Computing/vega-agent/agent@fc8e1ddd9d5ff16f245603368b06b675cad06783 # v0.15.0
         with:
-          installable: "github:Ad-Astra-Computing/vega-cache-example#${{ matrix.attr }}"
-          control-plane: https://vega-cache-staging.ad-astra-computing-inc.workers.dev
+          # Pinned to the commit under test, so the check below reads the same
+          # build this job published.
+          installable: "github:Ad-Astra-Computing/vega-cache-example/${{ github.sha }}#${{ matrix.attr }}"
+          control-plane: ${{ env.CONTROL_PLANE }}
+
+  verify:
+    needs: attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: cachix/install-nix-action@c134e4c9e34bac6cab09cf239815f9339aaaf84e # v31.5.1
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: The control plane recorded what was attested
+        run: |
+          set -euo pipefail
+          fail=0
+          for attr in probe flaky bignar; do
+            out="$(nix eval --raw ".#packages.x86_64-linux.${attr}.outPath")"
+            hash="$(basename "$out" | cut -d- -f1)"
+            # The JSON view, not the HTML page: that page renders for any
+            # well-formed hash, so checking it proves only that the hash is
+            # 32 characters long. `verdict` is "unknown" when Vega holds no
+            # record, which is exactly what a broken write path leaves behind.
+            body="$(curl -sS --retry 3 --retry-delay 5 --max-time 30 "${CONTROL_PLANE}/api/status/${hash}")"
+            verdict="$(printf '%s' "$body" | jq -r '.verdict')"
+            tenants="$(printf '%s' "$body" | jq -r '.tenants | join(",")')"
+            if [ "$verdict" = "unknown" ]; then
+              echo "::error::${attr}: Vega holds no record for ${hash}"
+              fail=1
+              continue
+            fi
+            # Exact element match. A substring test would also accept a tenant
+            # whose name merely contains this one, and these probe outputs are
+            # deterministic and public, so anyone can attest the same paths.
+            case ",${tenants}," in
+              *,Ad-Astra-Computing/vega-cache-example,*) ;;
+              *)
+                echo "::error::${attr}: ${hash} is recorded, but not attested by this repository (${tenants})"
+                fail=1
+                continue
+                ;;
+            esac
+            echo "${attr}: ${hash} recorded, verdict ${verdict}"
+          done
+          exit "$fail"
