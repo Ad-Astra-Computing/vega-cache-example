@@ -88,6 +88,17 @@ jobs:
                 continue
                 ;;
             esac
-            echo "${attr}: ${hash} recorded, verdict ${verdict}"
+            # And recorded TODAY. These probes are deterministic, so the output
+            # hashes to the same path every run: without this, a record from last
+            # week satisfies a check whose whole job is to prove the write path
+            # is alive right now.
+            at="$(printf '%s' "$body" | jq -r '.lastAttestedAt["Ad-Astra-Computing/vega-cache-example"] // 0')"
+            age=$(( ($(date +%s) * 1000 - at) / 1000 ))
+            if [ "$at" = "0" ] || [ "$age" -gt 21600 ]; then
+              echo "::error::${attr}: the newest record is ${age}s old; this run did not land"
+              fail=1
+              continue
+            fi
+            echo "${attr}: ${hash} recorded ${age}s ago, verdict ${verdict}"
           done
           exit "$fail"
