@@ -17,6 +17,8 @@ reproduction fixture for Vega's reproduction worker.
 - `probe`: a small, deterministic output.
 - `flaky`: intentionally non-reproducible (its bytes change on every build),
   used to exercise divergence detection.
+- `bignar`: a larger deterministic output whose closure pulls real dependencies,
+  used to exercise chunked closure retrieval.
 
 ## Using Vega in your own repository
 
@@ -31,7 +33,7 @@ jobs:
   attest:
     runs-on: ubuntu-latest
     steps:
-      - uses: Ad-Astra-Computing/vega-agent/agent@v0.4.3
+      - uses: Ad-Astra-Computing/vega-agent/agent@v0.19.0
         with:
           installable: "github:<owner>/<repo>#<attr>"
           control-plane: https://vega-cache.dev
