@@ -39,10 +39,10 @@
         # Fails by reaching outside the store for a host binary, which the
         # sandbox denies. Exercises the agent's failure classifier: the
         # diagnosis it reports for this is impure-host-path.
-        impure = pkgs.runCommand "vega-impure-probe" { } '''
+        impure = pkgs.runCommand "vega-impure-probe" { } ''
           mkdir -p "$out"
           /usr/bin/sw_vers > "$out/host.txt"
-        ''';
+        '';
         default = pkgs.figlet;
       };
     };
